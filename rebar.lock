@@ -1,0 +1,16 @@
+{"1.2.0",
+[{<<"jsone">>,{pkg,<<"jsone">>,<<"1.5.5">>},0},
+ {<<"quickrand">>,
+  {git,"https://github.com/okeuday/quickrand.git",
+       {ref,"c80077162f32c10002219f70e0afadb71e05f88c"}},
+  1},
+ {<<"uuid">>,
+  {git,"https://github.com/okeuday/uuid",
+       {ref,"9312cc158a94c76e40c82ca45fd5056fb191c889"}},
+  0}]}.
+[
+{pkg_hash,[
+ {<<"jsone">>, <<"E88519CA0427C83D0106C773AFA7231429D0221AAE9A4A4B11F9CA73EC18978A">>}]},
+{pkg_hash_ext,[
+ {<<"jsone">>, <<"ECB60CBA1323679209686EEB56EB10A57B31CEB601D96840B04D8C6D39FB9CF5">>}]}
+].
