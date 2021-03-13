@@ -22,7 +22,7 @@ Non-goals
 Current Tasks
 -------------
 
-- [ ] Basic Minecraft server on only one machine! (in progress)
+- [ ] Basic Minecraft 1.16.4 server on only one machine! (in progress)
 - [ ] Scaling player movements
 - [ ] Scaling chunk modifications
 - [ ] Scaling tick events like redstone and water flowing

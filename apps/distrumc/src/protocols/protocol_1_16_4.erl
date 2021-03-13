@@ -29,11 +29,20 @@ packet_info(Type, Args) ->
         ?PACKET(16#12, play, serverbound, pos);
         ?PACKET(16#13, play, serverbound, pos_and_rot);
         ?PACKET(16#14, play, serverbound, rot);
+        ?PACKET(16#15, play, serverbound, player_movement);
 
+        ?PACKET(16#04, play, clientbound, spawn_player);
         ?PACKET(16#1F, play, clientbound, keep_alive);
         ?PACKET(16#20, play, clientbound, chunk_data);
         ?PACKET(16#24, play, clientbound, join_game);
+        ?PACKET(16#27, play, clientbound, entity_position);
+        ?PACKET(16#28, play, clientbound, entity_pos_and_rot);
+        ?PACKET(16#29, play, clientbound, entity_rot);
+        ?PACKET(16#2A, play, clientbound, entity_movement);
+        ?PACKET(16#32, play, clientbound, player_info);
         ?PACKET(16#34, play, clientbound, pos_and_look);
+        ?PACKET(16#36, play, clientbound, remove_entities);
+        ?PACKET(16#3A, play, clientbound, entity_head_look);
         ?PACKET(16#40, play, clientbound, update_view_pos);
         ?PACKET(16#42, play, clientbound, spawn_position);
         _ -> {unknown_packet, Args}
@@ -153,20 +162,11 @@ packet(join_game) ->
     [
         {entity_id, i32},
         {is_hardcore, bool},
-        {gamemode,
-            {enum, u8, [
-                {survival, 0},
-                {creative, 1},
-                {adventure, 2},
-                {spectator, 3}
-            ]}},
+        {gamemode, {enum, u8, gamemode_enum()}},
         {prev_gamemode,
             {enum, i8, [
-                {none, -1},
-                {survival, 0},
-                {creative, 1},
-                {adventure, 2},
-                {spectator, 3}
+                {none, -1}
+                | gamemode_enum()
             ]}},
         {world_names, {array, varint, string}},
         {dimension_codec, nbt},
@@ -180,6 +180,47 @@ packet(join_game) ->
         {is_debug, bool},
         {is_flat, bool}
     ];
+packet(player_info) ->
+    [
+        {info,
+            {option,
+                {enum, varint, [
+                    {add_player, 0},
+                    {update_gamemode, 1},
+                    {update_latency, 2},
+                    {update_display_name, 3},
+                    {remove_player, 4}
+                ]},
+                [
+                    {add_player,
+                        player_info_body([
+                            {name, string},
+                            {props,
+                                {array, varint,
+                                    {packet, [
+                                        {name, string},
+                                        {value, string},
+                                        {signature, {option, string}}
+                                    ]}}},
+                            {gamemode, {enum, varint, gamemode_enum()}},
+                            {ping, varint},
+                            {display_name, {option, string}}
+                        ])},
+                    {update_gamemode,
+                        player_info_body([
+                            {new_gamemode, {enum, varint, gamemode_enum()}}
+                        ])},
+                    {update_latency,
+                        player_info_body([
+                            {new_latency, varint}
+                        ])},
+                    {update_display_name,
+                        player_info_body([
+                            {new_name, {option, string}}
+                        ])},
+                    {remove_player, player_info_body([])}
+                ]}}
+    ];
 packet(pos_and_look) ->
     [
         {x, double},
@@ -191,4 +232,69 @@ packet(pos_and_look) ->
         {teleport_id, varint}
     ];
 packet(spawn_position) ->
-    [{location, position}].
+    [{location, position}];
+packet(player_movement) ->
+    [{on_ground, bool}];
+packet(spawn_player) ->
+    [
+        {eid, varint},
+        {playerUuid, uuid},
+        {x, double},
+        {y, double},
+        {z, double},
+        {yaw, angle},
+        {pitch, angle}
+    ];
+packet(entity_head_look) ->
+    [
+        {entity_id, varint},
+        {head_yaw, angle}
+    ];
+packet(entity_position) ->
+    [
+        {entity_id, varint},
+        {delta_x, i16},
+        {delta_y, i16},
+        {delta_z, i16},
+        {on_ground, bool}
+    ];
+packet(entity_pos_and_rot) ->
+    [
+        {entity_id, varint},
+        {delta_x, i16},
+        {delta_y, i16},
+        {delta_z, i16},
+        {yaw, angle},
+        {pitch, angle},
+        {on_ground, bool}
+    ];
+packet(entity_rot) ->
+    [
+        {entity_id, varint},
+        {yaw, angle},
+        {pitch, angle},
+        {on_ground, bool}
+    ];
+packet(entity_movement) ->
+    [
+        {entity_id, varint}
+    ];
+packet(remove_entities) ->
+    [
+        {entity_ids, {array, varint, varint}}
+    ].
+
+gamemode_enum() ->
+    [
+        {survival, 0},
+        {creative, 1},
+        {adventure, 2},
+        {spectator, 3}
+    ].
+
+player_info_body(Fields) ->
+    {array, varint,
+        {packet, [
+            {uuid, uuid}
+            | Fields
+        ]}}.

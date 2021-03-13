@@ -2,13 +2,18 @@
 
 -behavior(gen_statem).
 
+-include("mc.hrl").
+
 -export([start_link/1, receive_packet/3]).
 -export([init/1, callback_mode/0, handshaking/3, status/3, login/3, play/3]).
 
 -define(TIMEOUT, 20000).
+-define(DECODE_PACKET(ID, Body, Protocol),
+    decode_packet({ID, ?FUNCTION_NAME, serverbound}, Body, Protocol)
+).
 
 start_link(Socket) ->
-    gen_statem:start_link({local, ?MODULE}, ?MODULE, [Socket], []).
+    gen_statem:start_link(?MODULE, [Socket], []).
 
 callback_mode() ->
     [state_functions, state_enter].
@@ -24,20 +29,29 @@ init([Socket]) ->
 receive_packet(Pid, ID, Body) ->
     ok = gen_statem:call(Pid, {recvpacket, {ID, Body}}).
 
--define(LOOKUP_PACKET(ID, Body, Protocol),
-    mc_protocol:decode_packet({ID, ?FUNCTION_NAME, serverbound}, Body, Protocol)
-).
+decode_packet({ID, State, Dir}, Body, Protocol) ->
+    Name = mc_protocol:lookup_packet_name(ID, State, Dir, Protocol),
+    {Name, mc_protocol:decode_packet(Name, Body, Protocol)}.
 
 send_packet(Name, Packet, #{socket := Socket, protocol := Protocol}) ->
-    Bin = mc_protocol:encode_packet({clientbound, Name}, Packet, Protocol),
-    ok = gen_tcp:send(Socket, Bin).
+    {ID, Body} = mc_protocol:encode_packet({clientbound, Name}, Packet, Protocol),
+    IDBin = mc_varint:encode(ID),
+    Len = mc_varint:encode(byte_size(IDBin) + byte_size(Body)),
+    case gen_tcp:send(Socket, <<Len/binary, IDBin/binary, Body/binary>>) of
+        ok ->
+            ok;
+        {error, closed} ->
+            exit(normal);
+        {error, Error} ->
+            exit(Error)
+    end.
 
 handshaking(enter, _Event, _Data) ->
     keep_state_and_data;
 handshaking(info, {'EXIT', _From, Reason}, _Data) ->
     handle_exit(Reason);
 handshaking({call, From}, {recvpacket, {ID, Body}}, #{protocol := Protocol} = Data) ->
-    {handshake, #{nextstate := NextState}} = ?LOOKUP_PACKET(ID, Body, Protocol),
+    {handshake, #{nextstate := NextState}} = ?DECODE_PACKET(ID, Body, Protocol),
     {next_state, NextState, Data, [{reply, From, ok}]}.
 
 status(enter, _OldState, _Data) ->
@@ -46,7 +60,7 @@ status(enter, _OldState, _Data) ->
 status(info, {'EXIT', _From, Reason}, _Data) ->
     handle_exit(Reason);
 status({call, From}, {recvpacket, {ID, Body}}, #{protocol := Protocol} = Data) ->
-    {Name, Packet} = ?LOOKUP_PACKET(ID, Body, Protocol),
+    {Name, Packet} = ?DECODE_PACKET(ID, Body, Protocol),
     io:format("[status] ~p: ~p~n", [Name, Packet]),
     case Name of
         status_req ->
@@ -77,14 +91,14 @@ login(enter, _OldState, _Data) ->
 login(info, {'EXIT', _From, Reason}, _Data) ->
     handle_exit(Reason);
 login({call, From}, {recvpacket, {ID, Body}}, #{protocol := Protocol} = Data) ->
-    {Name, Packet} = ?LOOKUP_PACKET(ID, Body, Protocol),
+    {Name, Packet} = ?DECODE_PACKET(ID, Body, Protocol),
     io:format("[login] ~p: ~p~n", [Name, Packet]),
     case Name of
         login_start ->
             #{name := PlayerName} = Packet,
-            Uuid = uuid:get_v4_urandom(),
+            {ok, Uuid} = mc_server:join(PlayerName),
             send_packet(login_success, #{name => PlayerName, uuid => Uuid}, Data),
-            {next_state, play, Data#{name => PlayerName}, [{reply, From, ok}]}
+            {next_state, play, Data#{name => PlayerName, player_uuid => Uuid}, [{reply, From, ok}]}
     end.
 
 send_keep_alive(Data) ->
@@ -92,7 +106,7 @@ send_keep_alive(Data) ->
     send_packet(keep_alive, #{id => Now}, Data),
     Data#{keep_alive_tm => Now}.
 
-play(enter, _OldState, #{protocol := Protocol} = Data) ->
+play(enter, _OldState, #{protocol := Protocol, player_uuid := Uuid, name := PlayerName} = Data) ->
     io:format("entering play~n"),
     {ok, _} = timer:send_interval(10000, keep_alive),
     send_packet(
@@ -119,18 +133,48 @@ play(enter, _OldState, #{protocol := Protocol} = Data) ->
     [
         begin
             Chunk = mc_chunk:generate_chunk_column({X, Z}),
-            io:format("sending ~p~n", [{X, Z}]),
             send_packet(chunk_data, mc_chunk:encode_chunk_column(Chunk, Protocol), Data)
         end
         || X <- lists:seq(-4, 4), Z <- lists:seq(-4, 4)
     ],
-    send_packet(spawn_position, #{location => {0, 0, 0}}, Data),
+    send_packet(
+        player_info,
+        #{
+            info =>
+                {add_player, [
+                    #{
+                        uuid => Uuid,
+                        name => PlayerName,
+                        props => [],
+                        gamemode => creative,
+                        ping => 75
+                    }
+                ]}
+        },
+        Data
+    ),
+    send_packet(
+        player_info,
+        #{
+            info =>
+                {update_latency, [
+                    #{
+                        uuid => Uuid,
+                        new_latency => 75
+                    }
+                ]}
+        },
+        Data
+    ),
     send_packet(
         pos_and_look,
         #{x => 0, y => 64, z => 0, yaw => 0, pitch => 0, flags => 0, teleport_id => 0},
         Data
     ),
     send_packet(update_view_pos, #{chunk_x => 0, chunk_z => 0}, Data),
+    send_packet(spawn_position, #{location => {0, 0, 0}}, Data),
+    {ok, ExistingPlayers} = mc_server:spawn(),
+    [spawn_player(P, Data) || P <- ExistingPlayers],
     {keep_state, send_keep_alive(Data)};
 play(info, {'EXIT', _From, Reason}, _Data) ->
     handle_exit(Reason);
@@ -148,8 +192,7 @@ play(info, keep_alive, Data) ->
             end
     end;
 play({call, From}, {recvpacket, {ID, Body}}, #{protocol := Protocol} = Data) ->
-    {Name, Packet} = ?LOOKUP_PACKET(ID, Body, Protocol),
-    % io:format("[play] ~p: ~p~n", [Name, Packet]),
+    {Name, Packet} = ?DECODE_PACKET(ID, Body, Protocol),
     case Name of
         keep_alive ->
             #{id := RecvTime} = Packet,
@@ -172,7 +215,54 @@ play({call, From}, {recvpacket, {ID, Body}}, #{protocol := Protocol} = Data) ->
         _ ->
             io:format("[play] unhandled packet ~p~n", [Name]),
             {keep_state, Data, [{reply, From, ok}]}
-    end.
+    end;
+play({call, From}, {spawn_player, Player}, Data) ->
+    spawn_player(Player, Data),
+    {keep_state, Data, [{reply, From, ok}]};
+play({call, From}, {remove_player, #player{eid = Eid}}, Data) ->
+    send_packet(remove_entities, #{entity_ids => [Eid]}, Data),
+    {keep_state, Data, [{reply, From, ok}]}.
+
+spawn_player(
+    #player{
+        eid = Eid,
+        uuid = Uuid,
+        name = Name,
+        pos = {X, Y, Z},
+        rot = {Yaw, Pitch}
+    },
+    #{name := MyName} = Data
+) ->
+    io:format("spawning player ~p for ~p~n", [Name, MyName]),
+    send_packet(
+        player_info,
+        #{
+            info =>
+                {add_player, [
+                    #{
+                        uuid => Uuid,
+                        name => Name,
+                        props => [],
+                        gamemode => creative,
+                        ping => 75
+                    }
+                ]}
+        },
+        Data
+    ),
+    send_packet(
+        spawn_player,
+        #{
+            eid => Eid,
+            playerUuid => Uuid,
+            x => X,
+            y => Y,
+            z => Z,
+            yaw => Yaw,
+            pitch => Pitch
+        },
+        Data
+    ).
 
 handle_exit(disconnected) ->
     % no need to alert supervisor if client just disconnected

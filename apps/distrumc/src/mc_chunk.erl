@@ -5,18 +5,21 @@
 -define(AIR, 0).
 -define(SMOOTH_STONE, 1).
 -define(BEDROCK, 33).
--define(GRASS, 1342).
--define(BITS_PER_BLOCK, 14).
+-define(GRASS, 9).
+-define(BITS_PER_BLOCK, 15).
 -define(BLOCKS_PER_LAYER, (16 * 16)).
 -define(BLOCKS_PER_SECTION, (?BLOCKS_PER_LAYER * 16)).
 -define(BLOCKS_PER_LONG, (64 div ?BITS_PER_BLOCK)).
 -define(LONGS_PER_LAYER, (?BLOCKS_PER_LAYER div ?BLOCKS_PER_LONG)).
 -define(LONGS_PER_SECTION, (?BLOCKS_PER_SECTION div ?BLOCKS_PER_LONG)).
 
-id_to_long(ID) ->
+ids_to_long(IDs) ->
     PaddingLen = 64 rem ?BITS_PER_BLOCK,
-    IDs = <<<<ID:?BITS_PER_BLOCK/unsigned-integer>> || _ <- lists:seq(1, ?BLOCKS_PER_LONG)>>,
-    <<0:PaddingLen/integer, IDs/binary>>.
+    Bin = <<<<X:?BITS_PER_BLOCK/signed-integer>> || X <- lists:reverse(IDs)>>,
+    <<0:PaddingLen/integer, Bin/bitstring>>.
+
+id_to_long(ID) ->
+    ids_to_long(lists:duplicate(?BLOCKS_PER_LONG, ID)).
 
 empty_chunk_section() ->
     #{
@@ -27,7 +30,6 @@ empty_chunk_section() ->
     }.
 
 generate_chunk_column({X, Z}) ->
-    io:format("generating chunk ~p~n", [{chunk, X, Z}]),
     EmptyChunk = empty_chunk_section(),
     BedrockChunk = EmptyChunk#{
         non_air_blocks => ?BLOCKS_PER_SECTION,
@@ -64,11 +66,17 @@ dummy_heightmap() ->
     ]}.
 
 encode_section(#{blocks := Blocks, non_air_blocks := NonAirBlocks}, _Protocol) ->
-    [
-        mc_protocol:encode_field(i16, NonAirBlocks),
-        mc_protocol:encode_field(u8, ?BITS_PER_BLOCK),
-        Blocks
-    ].
+    Fields = [
+        {non_air_blocks, i16},
+        {bits_per_block, u8},
+        {data_length, varint}
+    ],
+    Bin = mc_protocol:encode_fields(Fields, #{
+        non_air_blocks => NonAirBlocks,
+        bits_per_block => ?BITS_PER_BLOCK,
+        data_length => ?LONGS_PER_SECTION
+    }),
+    <<Bin/binary, Blocks/binary>>.
 
 encode_sections(Sections, Protocol) ->
     NonAirSections = lists:sort(maps:keys(Sections)),
@@ -78,7 +86,6 @@ encode_sections(Sections, Protocol) ->
     Lst.
 
 encode_chunk_column(#{pos := {X, Z}, sections := Sections, biome_ids := Biomes}, Protocol) ->
-    EncSections = encode_sections(Sections, Protocol),
     #{
         chunk_x => X,
         chunk_z => Z,
@@ -87,5 +94,5 @@ encode_chunk_column(#{pos := {X, Z}, sections := Sections, biome_ids := Biomes},
         heightmaps => dummy_heightmap(),
         biomes => Biomes,
         block_entities => [],
-        data => EncSections
+        data => encode_sections(Sections, Protocol)
     }.

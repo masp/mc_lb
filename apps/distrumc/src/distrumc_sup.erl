@@ -33,6 +33,12 @@ init([]) ->
     },
     ChildSpecs = [
         #{
+            id => mc_server,
+            start => {mc_server, start_link, []},
+            restart => permanent,
+            modules => [mc_server]
+        },
+        #{
             id => mc_listener,
             start => {mc_conn_sup, start_link, []},
             restart => permanent,
