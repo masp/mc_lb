@@ -1,9 +1,9 @@
-distrumc
+mc_lb
 ========
 
 > A fun experiment to make a serverless Minecraft server
 
-Standard Minecraft servers only support running on one physical machine. The only way to add more players with one server is to make the server bigger which has a limit. If you can scale a Minecraft server across machines instead, you can easily add machines as you have more players without needing to buy expensive machines. `distrumc` is an experiment to make Minecraft be able to run across many machines.
+Standard Minecraft servers only support running on one physical machine. The only way to add more players with one server is to make the server bigger which has a limit. If you can scale a Minecraft server across machines instead, you can easily add machines as you have more players without needing to buy expensive machines. `mc_lb` is an experiment to make Minecraft be able to run across many machines.
 
 Goals
 -----

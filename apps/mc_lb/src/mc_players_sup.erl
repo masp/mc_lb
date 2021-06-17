@@ -1,4 +1,4 @@
--module(mc_conn_sup).
+-module(mc_players_sup).
 
 -behavior(supervisor).
 

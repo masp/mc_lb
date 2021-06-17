@@ -1,24 +1,22 @@
 -module(mc_protocol).
 
--include_lib("eunit/include/eunit.hrl").
-
 -export([
     init/0,
-    lookup_packet_name/4,
-    decode_packet/3,
-    encode_packet/3,
-    decode_field/2,
-    encode_field/2,
-    encode_fields/2
+    init/1,
+    version/1,
+    decode_id/4,
+    encode_name/3,
+    decode/3,
+    encode/3
 ]).
 
-% WARNING: Used for testing, do not directly use
--export([lookup_id/2, lookup_name/3, packet/1]).
-
+-type version() :: non_neg_integer().
+-type packet_name() :: atom().
 -type packet_id() :: non_neg_integer().
 -type packet_state() :: handshaking | status | login | play.
 -type packet_dir() :: serverbound | clientbound.
--type packet_field_type() ::
+-type field_name() :: atom().
+-type field_type() ::
     varint
     | varlong
     | string
@@ -36,40 +34,55 @@
     | nbt
     | rest
     | position
-    | binary
-    | array
-    | bool
-    | bitmask
-    | enum
-    | packet
+    | {binary, LenT :: field_type()}
+    | {array, LenT :: field_type(), ValT :: field_type()}
+    | {bool, ValT :: field_type()}
+    | {bitmask, ValT :: field_type(), [{Val :: term(), BitPos :: integer()}]}
+    | {enum, ValT :: field_type(), [{Key :: atom(), Val :: term()}]}
+    | {packet, packet_def()}
     | angle.
 
--type packet_name() :: atom().
--type packet_field_def() :: {atom() | packet_field_type()}.
+-type packet_def() :: {field_name(), field_type()}.
 
--record(state, {
+-export_type([
+    packet_name/0,
+    packet_dir/0,
+    packet_state/0,
+    packet_id/0,
+    field_type/0,
+    version/0
+]).
+
+-record(proto, {
     protocol_mod :: module()
 }).
 
--type packet_protocol() :: #state{}.
+-type protocol() :: #proto{}.
 
--spec init() -> packet_protocol().
+-spec init() -> protocol().
 init() ->
     ProtocolMod = protocol_1_16_4,
     init(ProtocolMod).
 
+-spec init(module()) -> protocol().
 init(ProtocolMod) ->
-    #state{protocol_mod = ProtocolMod}.
+    #proto{protocol_mod = ProtocolMod}.
 
--spec lookup_packet_name(packet_id(), packet_state(), packet_dir(), packet_protocol()) ->
-    packet_name().
-lookup_packet_name(ID, State, Dir, #state{protocol_mod = Mod}) ->
-    Mod:lookup_name(ID, State, Dir).
+-spec version(protocol()) -> version().
+version(#proto{protocol_mod = Mod}) ->
+    Mod:version().
 
-lookup_packet_id(Name, Dir, #state{protocol_mod = Mod}) ->
-    Mod:lookup_id(Name, Dir).
+-spec decode_id(packet_id(), packet_state(), packet_dir(), protocol()) ->
+    packet_name() | {unknown_packet, term()}.
+decode_id(ID, State, Dir, #proto{protocol_mod = Mod}) ->
+    Mod:lookup_packet_info({name, {ID, State, Dir}}).
 
-lookup_packet_fields(Name, #state{protocol_mod = Mod}) ->
+-spec encode_name(packet_name(), packet_dir(), protocol()) ->
+    packet_id() | {unknown_packet, term()}.
+encode_name(Name, Dir, #proto{protocol_mod = Mod}) ->
+    Mod:lookup_packet_info({id, {Name, Dir}}).
+
+lookup_packet_fields(Name, #proto{protocol_mod = Mod}) ->
     Mod:packet(Name).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -79,7 +92,8 @@ lookup_packet_fields(Name, #state{protocol_mod = Mod}) ->
 % For example, you need {0x01, login, serverbound} to know that packet ID 0x01 corresponds
 % to the Encryption Response packet. Protocol version is also needed but should be passed in init.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-decode_packet(Name, Body, Protocol) ->
+-spec decode(Name :: packet_name(), Body :: binary(), Protocol :: protocol()) -> map().
+decode(Name, Body, Protocol) ->
     Fields = lookup_packet_fields(Name, Protocol),
     {Decoded, <<>>} = decode_fields(Body, Fields, #{}),
     Decoded.
@@ -88,15 +102,21 @@ add_decoded(ignore, _, Decoded) -> Decoded;
 add_decoded(_, none, Decoded) -> Decoded;
 add_decoded(FName, FValue, Decoded) -> maps:put(FName, FValue, Decoded).
 
-%% Decode a list of fields from the binary. Any field with name 'ignore' will be ignored.
--spec decode_fields(binary(), [packet_field_def()], map()) -> map().
+%% Decode a list of fields from the binary.
+%% Any field with name 'ignore' will be ignored, and any field with a decoded value of 'none' will be ignored.
+-spec decode_fields(Body, FieldDefinitions, DecodedFields) -> {NewDecodedFields, Rest} when
+    Body :: binary(),
+    Rest :: binary(),
+    FieldDefinitions :: [packet_def()],
+    DecodedFields :: map(),
+    NewDecodedFields :: map().
 decode_fields(Rest, [], Decoded) ->
     {Decoded, Rest};
 decode_fields(Body, [{FName, FType} | Fields], Decoded) ->
     {FValue, Rest} = decode_field(Body, FType),
     decode_fields(Rest, Fields, add_decoded(FName, FValue, Decoded)).
 
--spec decode_field(binary(), term()) -> any().
+-spec decode_field(binary(), field_type()) -> {Value :: any(), Rest :: binary()}.
 decode_field(Body, varint) ->
     mc_varint:decode(Body);
 decode_field(Body, varlong) ->
@@ -149,7 +169,7 @@ decode_field(Bin, {option, OptRepr, Options}) ->
     {Opt, OptBodyRepr} = lists:keyfind(Opt, 1, Options),
     {OptBody, Rest2} = decode_field(Rest, OptBodyRepr),
     {{Opt, OptBody}, Rest2};
-decode_field(<<V:128/binary, Rest/binary>>, uuid) ->
+decode_field(<<V:16/binary, Rest/binary>>, uuid) ->
     {V, Rest};
 decode_field(Bin, {enum, Repr, Enum}) ->
     {EncV, Rest} = decode_field(Bin, Repr),
@@ -184,17 +204,15 @@ decode_array(Bin, Repr, Len) when Len > 0 ->
 % is sent in both directions.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--spec encode_packet({packet_dir(), packet_name()}, map(), packet_protocol()) -> binary().
-encode_packet({Dir, Name}, Packet, Protocol) ->
-    ID = lookup_packet_id(Name, Dir, Protocol),
+-spec encode({packet_name(), packet_dir()}, map(), protocol()) -> {packet_id(), binary()}.
+encode({Name, Dir}, Packet, Protocol) ->
+    ID = encode_name(Name, Dir, Protocol),
     Body = encode_packet_body(Name, Packet, Protocol),
     {ID, Body}.
 
 encode_packet_body(Name, Packet, Protocol) ->
     Fields = lookup_packet_fields(Name, Protocol),
     encode_fields(Fields, Packet, <<>>).
-
-encode_fields(Fields, Packet) -> encode_fields(Fields, Packet, <<>>).
 
 encode_fields([{FName, FType} | Fields], Packet, Acc) ->
     FValue = maps:get(FName, Packet, {missing, FName}),
@@ -203,6 +221,7 @@ encode_fields([{FName, FType} | Fields], Packet, Acc) ->
 encode_fields([], _Packet, BinAcc) ->
     BinAcc.
 
+-spec encode_field(field_type(), V :: any()) -> Encoded :: binary().
 encode_field(varint, V) ->
     mc_varint:encode(V);
 encode_field(varlong, V) ->
@@ -239,7 +258,7 @@ encode_field(angle, V) ->
     <<Angle:8/unsigned-integer>>;
 encode_field(nbt, V) ->
     mc_nbt:encode(V);
-encode_field(uuid, V) ->
+encode_field(uuid, V) when byte_size(V) =:= 16 ->
     V;
 encode_field(rest, V) when is_binary(V) ->
     V;
@@ -269,177 +288,3 @@ encode_field({array, LenRepr, ElRepr}, Vs) ->
     <<LenBin/binary, VsBin/binary>>;
 encode_field({packet, Fields}, Packet) ->
     encode_fields(Fields, Packet, <<>>).
-
-%% Fake testing packet IDs and definitions
-lookup_id(Name, Dir) ->
-    case {Name, Dir} of
-        {handshake, clientbound} -> 16#00;
-        {stringer, clientbound} -> 16#01;
-        {uuider, clientbound} -> 16#02;
-        {enumer, clientbound} -> 16#03;
-        {arrayer, clientbound} -> 16#04;
-        {positioner, clientbound} -> 16#05;
-        {nested, clientbound} -> 16#06
-    end.
-
-lookup_name(ID, State, Dir) ->
-    case {ID, State, Dir} of
-        {16#00, handshaking, clientbound} -> handshake;
-        {16#01, handshaking, clientbound} -> stringer;
-        {16#02, handshaking, clientbound} -> uuider;
-        {16#03, handshaking, clientbound} -> enumer;
-        {16#04, handshaking, clientbound} -> arrayer;
-        {16#05, handshaking, clientbound} -> positioner;
-        {16#06, handshaking, clientbound} -> nested
-    end.
-
-packet(handshake) ->
-    [
-        {field0, varint},
-        {field1, i16},
-        {field2, u32},
-        {field3, angle}
-    ];
-packet(stringer) ->
-    [
-        {field0, string}
-    ];
-packet(uuider) ->
-    [
-        {field0, uuid}
-    ];
-packet(enumer) ->
-    [
-        {field0,
-            {enum, varint, [
-                {none, 0},
-                {enum0, 3},
-                {enum1, 64}
-            ]}},
-        {field1,
-            {bitmask, varint, [
-                {mask0, 0},
-                {mask1, 2},
-                {mask2, 4}
-            ]}},
-        {field2, {option, u8}},
-        {field3,
-            {option,
-                {enum, varint, [
-                    {opt0, 0},
-                    {opt1, 1}
-                ]},
-                [
-                    {opt0, u8},
-                    {opt1, u16}
-                ]}}
-    ];
-packet(arrayer) ->
-    [
-        {field0, {array, varint, u8}},
-        {field1, {binary, varint}}
-    ];
-packet(positioner) ->
-    [{field0, position}];
-packet(nested) ->
-    [
-        {field0,
-            {array, varint,
-                {packet, [
-                    {nested0, varint},
-                    {nested1, u8}
-                ]}}}
-    ].
-
-lookup_test_() ->
-    Protocol = init(?MODULE),
-    [
-        ?_assertEqual(stringer, lookup_packet_name(16#01, handshaking, clientbound, Protocol)),
-        ?_assertEqual(16#01, lookup_packet_id(stringer, clientbound, Protocol))
-    ].
-
-decode_test_() ->
-    Protocol = init(?MODULE),
-    [
-        ?_assertEqual(
-            #{field0 => 1, field1 => 5, field2 => 10, field3 => 45.0},
-            decode_packet(handshake, <<1, 0, 5, 0, 0, 0, 10, 32>>, Protocol)
-        ),
-        ?_assertEqual(
-            #{field0 => <<"©as"/utf8>>},
-            decode_packet(stringer, <<4, 16#C2, 16#A9, 16#61, 16#73>>, Protocol)
-        ),
-        ?_assertEqual(
-            #{field0 => enum1, field1 => [mask1, mask2], field2 => 5, field3 => {opt1, 6}},
-            decode_packet(enumer, <<64, 20, 1, 5, 1, 0, 6>>, Protocol)
-        ),
-        ?_assertEqual(
-            #{field1 => [], field3 => {opt0, 3}},
-            decode_packet(enumer, <<0, 0, 0, 0, 3>>, Protocol)
-        ),
-        ?_assertEqual(
-            #{field0 => [1, 2, 3, 4], field1 => <<1, 2, 3, 4>>},
-            decode_packet(arrayer, <<4, 1, 2, 3, 4, 4, 1, 2, 3, 4>>, Protocol)
-        ),
-        ?_assertEqual(
-            #{field0 => {-1, 2, 3}},
-            decode_packet(positioner, <<255, 255, 255, 192, 0, 0, 48, 2>>, Protocol)
-        ),
-        ?_assertEqual(
-            #{field0 => [#{nested0 => 2, nested1 => 5}]},
-            decode_packet(nested, <<1, 2, 5>>, Protocol)
-        )
-    ].
-
-encode_test_() ->
-    Protocol = init(?MODULE),
-    [
-        ?_assertEqual(
-            {0, <<5, 255, 255, 0, 0, 0, 10, 32>>},
-            encode_packet(
-                {clientbound, handshake},
-                #{field0 => 5, field1 => -1, field2 => 10, field3 => 45.0},
-                Protocol
-            )
-        ),
-        ?_assertEqual(
-            {1, <<4, 16#C2, 16#A9, 16#61, 16#73>>},
-            encode_packet({clientbound, stringer}, #{field0 => <<"©as"/utf8>>}, Protocol)
-        ),
-        ?_assertEqual(
-            {2, <<247, 248, 249, 250, 251, 252, 253, 254>>},
-            encode_packet(
-                {clientbound, uuider},
-                #{field0 => <<247, 248, 249, 250, 251, 252, 253, 254>>},
-                Protocol
-            )
-        ),
-        ?_assertEqual(
-            {3, <<3, 20, 0, 1, 0, 7>>},
-            encode_packet(
-                {clientbound, enumer},
-                #{field0 => enum0, field1 => [mask1, mask2], field3 => {opt1, 7}},
-                Protocol
-            )
-        ),
-        ?_assertEqual(
-            {4, <<4, 1, 2, 3, 4, 4, 1, 2, 3, 4>>},
-            encode_packet(
-                {clientbound, arrayer},
-                #{field0 => [1, 2, 3, 4], field1 => <<1, 2, 3, 4>>},
-                Protocol
-            )
-        ),
-        ?_assertEqual(
-            {5, <<255, 255, 255, 192, 0, 0, 48, 2>>},
-            encode_packet({clientbound, positioner}, #{field0 => {-1, 2, 3}}, Protocol)
-        ),
-        ?_assertEqual(
-            {6, <<1, 2, 5>>},
-            encode_packet(
-                {clientbound, nested},
-                #{field0 => [#{nested0 => 2, nested1 => 5}]},
-                Protocol
-            )
-        )
-    ].

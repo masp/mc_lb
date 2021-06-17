@@ -1,8 +1,7 @@
-{application, distrumc, [
-    {description, "An OTP application"},
+{application, mc_common, [
+    {description, "Common Minecraft related functionality like packet parsing"},
     {vsn, "0.1.0"},
     {registered, []},
-    {mod, {distrumc_app, []}},
     {applications, [
         kernel,
         stdlib

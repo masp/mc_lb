@@ -1,23 +1,20 @@
 -module(protocol_1_16_4).
+-behaviour(protocol_definition).
 
--export([packet/1, lookup_id/2, lookup_name/3]).
+-include("protocol_utils.hrl").
 
-lookup_id(Name, Dir) -> packet_info(id, {Name, Dir}).
+-export([version/0, packet/1, lookup_packet_info/1]).
 
-lookup_name(ID, State, Dir) -> packet_info(name, {ID, State, Dir}).
+version() -> 754.
 
--define(PACKET(ID, State, Dir, Name), 
-    {name, {ID, State, Dir}} -> Name;
-    {id, {Name, Dir}} -> ID).
-
-packet_info(Type, Args) ->
-    case {Type, Args} of
+lookup_packet_info(PacketInfo) ->
+    case PacketInfo of
         ?PACKET(16#00, handshaking, serverbound, handshake);
 
         ?PACKET(16#00, status, serverbound, status_req);
         ?PACKET(16#01, status, serverbound, ping);
         ?PACKET(16#00, status, clientbound, status_resp);
-        ?PACKET(16#01, status, clientbound, ping);
+        ?PACKET(16#01, status, clientbound, pong);
 
         ?PACKET(16#00, login, serverbound, login_start);
         ?PACKET(16#02, login, clientbound, login_success);
@@ -33,7 +30,6 @@ packet_info(Type, Args) ->
 
         ?PACKET(16#04, play, clientbound, spawn_player);
         ?PACKET(16#1F, play, clientbound, keep_alive);
-        ?PACKET(16#20, play, clientbound, chunk_data);
         ?PACKET(16#24, play, clientbound, join_game);
         ?PACKET(16#27, play, clientbound, entity_position);
         ?PACKET(16#28, play, clientbound, entity_pos_and_rot);
@@ -45,7 +41,7 @@ packet_info(Type, Args) ->
         ?PACKET(16#3A, play, clientbound, entity_head_look);
         ?PACKET(16#40, play, clientbound, update_view_pos);
         ?PACKET(16#42, play, clientbound, spawn_position);
-        _ -> {unknown_packet, Args}
+        _ -> {unknown_packet, PacketInfo}
     end.
 
 %%% Handshake Packets
@@ -67,6 +63,8 @@ packet(status_req) ->
 packet(status_resp) ->
     [{json_resp, string}];
 packet(ping) ->
+    [{payload, i64}];
+packet(pong) ->
     [{payload, i64}];
 %%%
 %%% Login Packets
@@ -165,7 +163,7 @@ packet(join_game) ->
         {gamemode, {enum, u8, gamemode_enum()}},
         {prev_gamemode,
             {enum, i8, [
-                {none, -1}
+                {no_prev, -1}
                 | gamemode_enum()
             ]}},
         {world_names, {array, varint, string}},

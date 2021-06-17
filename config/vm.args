@@ -1,6 +1,6 @@
--sname distrumc
+-sname mc_lb
 
--setcookie distrumc_cookie
+-setcookie mc_lb_cookie
 
 +K true
 +A30

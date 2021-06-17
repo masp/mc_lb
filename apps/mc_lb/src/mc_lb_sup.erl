@@ -1,9 +1,9 @@
 %%%-------------------------------------------------------------------
-%% @doc distrumc top level supervisor.
+%% @doc mc_lb top level supervisor.
 %% @end
 %%%-------------------------------------------------------------------
 
--module(distrumc_sup).
+-module(mc_lb_sup).
 
 -behaviour(supervisor).
 
@@ -33,17 +33,11 @@ init([]) ->
     },
     ChildSpecs = [
         #{
-            id => mc_server,
-            start => {mc_server, start_link, []},
-            restart => permanent,
-            modules => [mc_server]
-        },
-        #{
             id => mc_listener,
-            start => {mc_conn_sup, start_link, []},
+            start => {mc_players_sup, start_link, []},
             restart => permanent,
             type => supervisor,
-            modules => [mc_conn_sup]
+            modules => [mc_player_sup]
         }
     ],
     {ok, {SupFlags, ChildSpecs}}.

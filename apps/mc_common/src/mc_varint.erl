@@ -105,6 +105,7 @@ decode_varint_test_() ->
 encode(V) ->
     encode(V, 4).
 
+-spec encode_long(integer()) -> binary().
 encode_long(V) ->
     encode(V, 8).
 
