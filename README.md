@@ -1,7 +1,7 @@
 mc_lb
 ========
 
-> An experiment to make an infinitely scalable L7 loadbalancer for Minecraft's protocol
+> An experiment to make an easily scalable Layer 7 proxy for Minecraft's protocol
 
 Features
 --------
@@ -10,6 +10,13 @@ Features
 - [ ] Proxy many servers behind single proxy
 - [ ] Proxy many servers behind many proxies
 - [ ] Global chat
+- [ ] Global teleportation
+
+Similar Projects
+----------------
+
+- [BungeeCord](https://github.com/SpigotMC/BungeeCord)
+- [Waterfall](https://github.com/PaperMC/Waterfall)
 
 Pre-requisites
 --------------
