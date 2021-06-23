@@ -21,6 +21,6 @@ init(_Args) ->
             id => mc_tcp_acceptor,
             start => {mc_acceptor, start_link, [LSocket]}
         }
-        % Temporary children will be started for each connection that the acceptor creates
+        % Temporary mc_player_sup will be started for each connection that the acceptor creates
     ],
     {ok, {SupFlags, ChildSpecs}}.

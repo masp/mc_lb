@@ -20,6 +20,7 @@ lookup_packet_info(PacketInfo) ->
         ?PACKET(16#02, login, clientbound, login_success);
 
         ?PACKET(16#00, play, serverbound, teleport_confirm);
+        ?PACKET(16#03, play, serverbound, chat_serverbound);
         ?PACKET(16#05, play, serverbound, client_settings);
         ?PACKET(16#0B, play, serverbound, plugin_message);
         ?PACKET(16#10, play, serverbound, keep_alive);
@@ -29,6 +30,7 @@ lookup_packet_info(PacketInfo) ->
         ?PACKET(16#15, play, serverbound, player_movement);
 
         ?PACKET(16#04, play, clientbound, spawn_player);
+        ?PACKET(16#0E, play, clientbound, chat_clientbound);
         ?PACKET(16#1F, play, clientbound, keep_alive);
         ?PACKET(16#24, play, clientbound, join_game);
         ?PACKET(16#27, play, clientbound, entity_position);
@@ -38,6 +40,7 @@ lookup_packet_info(PacketInfo) ->
         ?PACKET(16#32, play, clientbound, player_info);
         ?PACKET(16#34, play, clientbound, pos_and_look);
         ?PACKET(16#36, play, clientbound, remove_entities);
+        ?PACKET(16#39, play, clientbound, respawn);
         ?PACKET(16#3A, play, clientbound, entity_head_look);
         ?PACKET(16#40, play, clientbound, update_view_pos);
         ?PACKET(16#42, play, clientbound, spawn_position);
@@ -76,6 +79,8 @@ packet(keep_alive) ->
     [{id, i64}];
 packet(teleport_confirm) ->
     [{teleport_id, varint}];
+packet(chat_serverbound) ->
+    [{message, string}];
 packet(client_settings) ->
     [
         {locale, string},
@@ -161,11 +166,7 @@ packet(join_game) ->
         {entity_id, i32},
         {is_hardcore, bool},
         {gamemode, {enum, u8, gamemode_enum()}},
-        {prev_gamemode,
-            {enum, i8, [
-                {no_prev, -1}
-                | gamemode_enum()
-            ]}},
+        {prev_gamemode, {enum, i8, [{no_prev, -1} | gamemode_enum()]}},
         {world_names, {array, varint, string}},
         {dimension_codec, nbt},
         {dimension, nbt},
@@ -243,10 +244,32 @@ packet(spawn_player) ->
         {yaw, angle},
         {pitch, angle}
     ];
+packet(chat_clientbound) ->
+    [
+        {msg, string},
+        {position,
+            {enum, u8, [
+                {chat, 0},
+                {system_msg, 1},
+                {game_info, 2}
+            ]}},
+        {sender, uuid}
+    ];
 packet(entity_head_look) ->
     [
         {entity_id, varint},
         {head_yaw, angle}
+    ];
+packet(respawn) ->
+    [
+        {dimension, nbt},
+        {world_name, string},
+        {hashed_seed, i64},
+        {gamemode, {enum, u8, gamemode_enum()}},
+        {prev_gamemode, {enum, i8, [{no_prev, -1} | gamemode_enum()]}},
+        {is_debug, bool},
+        {is_flat, bool},
+        {copy_metadata, bool}
     ];
 packet(entity_position) ->
     [

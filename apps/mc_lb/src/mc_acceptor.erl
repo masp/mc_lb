@@ -63,8 +63,8 @@ handle_login(McSocket) ->
 start_child(McSocket) ->
     % Takes control of the TCP socket in start_link
     {ok, Pid} = supervisor:start_child(mc_players_sup, #{
-        id => {mc_proxy, make_ref()},
-        start => {mc_proxy, start_link, [McSocket]},
+        id => {mc_player_sup, make_ref()},
+        start => {mc_player_sup, start_link, [McSocket]},
         restart => temporary
     }),
     ok = mc_socket:controlling_process(McSocket, Pid).

@@ -113,7 +113,12 @@ add_decoded(FName, FValue, Decoded) -> maps:put(FName, FValue, Decoded).
 decode_fields(Rest, [], Decoded) ->
     {Decoded, Rest};
 decode_fields(Body, [{FName, FType} | Fields], Decoded) ->
-    {FValue, Rest} = decode_field(Body, FType),
+    {FValue, Rest} =
+        try
+            decode_field(Body, FType)
+        catch
+            error:Error -> erlang:error({decode_fail, Error}, [Body, Fields, Decoded])
+        end,
     decode_fields(Rest, Fields, add_decoded(FName, FValue, Decoded)).
 
 -spec decode_field(binary(), field_type()) -> {Value :: any(), Rest :: binary()}.
@@ -173,8 +178,12 @@ decode_field(<<V:16/binary, Rest/binary>>, uuid) ->
     {V, Rest};
 decode_field(Bin, {enum, Repr, Enum}) ->
     {EncV, Rest} = decode_field(Bin, Repr),
-    {DecAtom, _} = lists:keyfind(EncV, 2, Enum),
-    {DecAtom, Rest};
+    case lists:keyfind(EncV, 2, Enum) of
+        {DecAtom, _} ->
+            {DecAtom, Rest};
+        false ->
+            erlang:error({invalid_enum, EncV, Enum})
+    end;
 decode_field(Bin, {bitmask, Repr, Enum}) ->
     {V, Rest} = decode_field(Bin, Repr),
     Flags = [Flag || {Flag, Pos} <- Enum, V band (1 bsl Pos) > 0],

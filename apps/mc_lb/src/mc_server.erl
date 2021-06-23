@@ -4,6 +4,17 @@
 
 -type player() :: #{name => binary()}.
 
+-type info() :: #{
+    name => binary(),
+    address => inet:socket_address() | inet:hostname(),
+    port => inet:port_number(),
+    protocol => mc_protocol:protocol(),
+    description => binary(),
+    max_players => non_neg_integer()
+}.
+
+-export_type([info/0]).
+
 -spec connect(Address, Port, Player) -> {ok, mc_socket:socket()} when
     Address :: inet:socket_address() | inet:hostname(),
     Port :: inet:port_number(),
@@ -33,10 +44,8 @@ login(Socket, #{name := Name} = Player) ->
     mc_socket:send(Socket, login_start, #{name => Name}),
     case mc_socket:recv(Socket) of
         {packet, login_success, _Packet} ->
-            io:format("Entering play~n"),
             mc_socket:change_state(Socket, play);
-        {packet, PacketName, Packet} ->
+        {packet, _PacketName, _Packet} ->
             % TODO: handle compression and encryption
-            io:format("Ignoring packet ~p: ~p~n", [PacketName, Packet]),
             login(Socket, Player)
     end.
