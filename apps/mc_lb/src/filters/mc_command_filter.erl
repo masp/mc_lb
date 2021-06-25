@@ -1,26 +1,23 @@
 -module(mc_command_filter).
--behaviour(mc_proxy_filter).
+-behaviour(mc_pipe_filter).
 
 -include_lib("kernel/include/logger.hrl").
 
--export([init/1, handle_filter/3]).
+-export([handle_filter/2]).
 
-init(_Args) ->
-    none.
-
-handle_filter({chat_serverbound, #{message := <<"/", CmdAll/binary>>}}, Proxy, State) ->
+handle_filter(Player, {chat_serverbound, #{message := <<"/", CmdAll/binary>>}}) ->
     Args = binary:split(CmdAll, <<" ">>, [trim_all]),
-    case handle_command(Args, Proxy) of
+    case handle_command(Args, Player) of
         ok ->
             ?LOG_NOTICE(#{event => cmd, command => CmdAll}),
-            {block, State};
+            block;
         unknown_cmd ->
-            {forward, State}
+            forward
     end;
-handle_filter({_PacketName, _Packet}, _Proxy, State) ->
-    {forward, State}.
+handle_filter(_Player, {_PacketName, _Packet}) ->
+    forward.
 
-handle_command([<<"worlds">>, <<"list">>], Proxy) ->
-    mc_proxy:send_msg(Proxy, <<"World list:">>);
+handle_command([<<"worlds">>, <<"list">>], Player) ->
+    mc_proxy:send_msg(Player, <<"World list:">>);
 handle_command(_Args, _Proxy) ->
     unknown_cmd.

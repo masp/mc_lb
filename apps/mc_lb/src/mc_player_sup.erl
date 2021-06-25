@@ -1,4 +1,4 @@
--module(mc_players_sup).
+-module(mc_player_sup).
 
 -behavior(supervisor).
 
@@ -17,9 +17,9 @@ init([CSocket]) ->
     ChildSpecs = [
         % Acceptor
         #{
-            id => {mc_proxy, make_ref()},
-            start => {mc_proxy, start_link, [CSocket]},
-            restart => permanent
+            id => {mc_player, make_ref()},
+            start => {mc_player, start_link, [CSocket]},
+            restart => transient
         }
     ],
     {ok, {SupFlags, ChildSpecs}}.
