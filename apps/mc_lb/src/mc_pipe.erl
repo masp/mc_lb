@@ -29,9 +29,9 @@
     Player :: mc_player:player(),
     Filters :: [module()].
 start_link(Player, Filters) ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [Player, Filters], []).
+    gen_server:start_link(?MODULE, [Player, Filters], []).
 
--spec bind(pipe(), Socket, Side) -> ok when
+-spec bind(pipe(), Side, Socket) -> ok when
     Side :: recv | send,
     Socket :: mc_socket:socket().
 bind(Pipe, Side, Socket) ->
@@ -58,7 +58,9 @@ handle_info(
 ) when S =/= none ->
     case run_filters(Player, Name, Packet, Fs) of
         forward ->
-            ok = mc_socket:send(S, Name, Packet)
+            ok = mc_socket:send(S, Name, Packet);
+        block ->
+            block
     end,
     mc_socket:set_active(R),
     {noreply, State};

@@ -18,6 +18,6 @@ handle_filter(_Player, {_PacketName, _Packet}) ->
     forward.
 
 handle_command([<<"worlds">>, <<"list">>], Player) ->
-    mc_proxy:send_msg(Player, <<"World list:">>);
+    mc_player:send_msg(Player, <<"World list:">>);
 handle_command(_Args, _Proxy) ->
     unknown_cmd.

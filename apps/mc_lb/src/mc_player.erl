@@ -29,14 +29,16 @@
 -spec start_link(ClientSocket) -> {ok, mc_player()} when
     ClientSocket :: mc_socket:socket().
 start_link(CSocket) ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [CSocket], []).
+    gen_server:start_link(?MODULE, [CSocket], []).
 
 init([CSocket]) ->
     {ok, CPipe} = mc_pipe:start_link(self(), []),
-    {ok, SPipe} = mc_pipe:start_link(self(), []),
-    ok = mc_pipe:bind(CPipe, CSocket, send),
-    ok = mc_pipe:bind(SPipe, CSocket, recv),
-    self ! find_server,
+    {ok, SPipe} = mc_pipe:start_link(self(), [
+        mc_command_filter
+    ]),
+    ok = mc_pipe:bind(CPipe, send, CSocket),
+    ok = mc_pipe:bind(SPipe, recv, CSocket),
+    self() ! find_server,
     {ok, #state{
         cpipe = CPipe,
         csock = CSocket,
@@ -67,8 +69,8 @@ handle_info({mc_error, C, Reason}, #state{csock = C} = State) ->
     exit(normal);
 handle_info(find_server, #state{cpipe = CPipe, spipe = SPipe} = State) ->
     {ok, SSocket} = mc_server:connect("localhost", 25564, #{name => <<"ttt">>}),
-    ok = mc_pipe:bind(CPipe, SSocket, recv),
-    ok = mc_pipe:bind(SPipe, SSocket, send),
+    ok = mc_pipe:bind(CPipe, recv, SSocket),
+    ok = mc_pipe:bind(SPipe, send, SSocket),
     {noreply, State}.
 
 terminate(_Reason, _State) ->
