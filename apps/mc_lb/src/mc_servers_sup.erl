@@ -8,26 +8,26 @@ start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 init(_Args) ->
-    SupFlags = #{
-        strategy => one_for_one,
-        intensity => 0,
-        period => 1
-    },
+    SupFlags = #{strategy => one_for_one},
     ChildSpecs = [
         % Main Server Registry
         #{
-            id => mc_server_registry,
-            start => {mc_server_registry, start_link, [servers()]}
+            id => mc_server_monitor_sup,
+            start => {mc_server_monitor_sup, start_link, []},
+            restart => permanent,
+            type => supervisor
         },
         #{
-            id => mc_server_monitor_sup,
-            start => {mc_server_monitor_sup, start_link, [servers()]}
+            id => mc_server_registry,
+            start => {mc_server_registry, start_link, [servers()]},
+            restart => permanent,
+            type => worker
         }
     ],
     {ok, {SupFlags, ChildSpecs}}.
 
 servers() ->
     [
-        #{name => <<"Server A">>, address => "localhost", port => 25564},
-        #{name => <<"Server B">>, address => "localhost", port => 25563}
+        #{name => <<"Server A">>, address => "localhost", port => 25564}
+        % #{name => <<"Server B">>, address => "localhost", port => 25563}
     ].

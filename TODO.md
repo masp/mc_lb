@@ -1,5 +1,5 @@
 ### Multiple servers task list
-- [ ] Recognize commands given by player to the server
+- [X] Recognize commands given by player to the server
     - /worlds list - list all worlds
     - /worlds go [world] - go to world [world] 
 - [ ] Support a world registry that maps names -> servers/worlds

@@ -1,43 +1,65 @@
 -module(mc_server_monitor).
--behaviour(gen_server).
+-behaviour(gen_statem).
 
--export([start_link/0]).
+-include_lib("kernel/include/logger.hrl").
 
-%% gen_server callbacks
+-export([start_link/3]).
+
+%% gen_statem callbacks
 -export([
+    callback_mode/0,
     init/1,
-    handle_call/3,
-    handle_cast/2,
-    handle_info/2,
-    terminate/2,
-    code_change/3
+    handle_event/4,
+    terminate/3
 ]).
 
-% Every 5 seconds heartbeat all servers to verify they are still alive
+% Time to wait in milliseconds trying to connect to a new server. If the process dies and gets restarted by the supervisor,
+% then it should wait this BACKOFF_TIME before trying to connect again (and possibly failing). In mc_server_monitor_sup, the maximum restart period should
+% be less than this backoff time to guarantee that these processes are never killed because of ping failures (even if they are permanent errors!!).
+-define(BACKOFF_TIME, 2000).
+
+% Every 5 seconds heartbeat server to verify they are still alive by sending a status request. We can also then see how many players are online and how
+% full the server is.
 -define(PING_FREQ, 5000).
 
--record(state, {}).
+-record(data, {
+    name :: binary(),
+    address :: inet:socket_address() | inet:hostname(),
+    port :: inet:port_number()
+}).
 
-start_link() ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+-spec start_link(Name, Address, Port) -> {ok, pid()} when
+    Name :: binary(),
+    Address :: inet:socket_address() | inet:hostname(),
+    Port :: inet:port_number().
+start_link(Name, Address, Port) ->
+    gen_statem:start_link(?MODULE, [Name, Address, Port], []).
 
-init([]) ->
-    timer:send_interval(?PING_FREQ, heartbeat),
-    {ok, #state{}}.
+callback_mode() -> handle_event_function.
 
-handle_call(_Request, _From, State) ->
-    {reply, ignored, State}.
+init([Name, Address, Port]) ->
+    erlang:send_after(?BACKOFF_TIME, self(), ping),
+    {ok, connected, #data{
+        name = Name,
+        address = Address,
+        port = Port
+    }}.
 
-handle_cast(_Msg, State) ->
-    {noreply, State}.
+handle_event(info, ping, connected, Data) ->
+    do_status_check(Data),
+    erlang:send_after(?PING_FREQ, self(), ping),
+    {next_state, connected, Data, []}.
 
-handle_info(heartbeat, State) ->
-    {noreply, State}.
-
-terminate(_Reason, _State) ->
+terminate(_Reason, _State, _Data) ->
     ok.
 
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
-
 %% Internal functions
+do_status_check(#data{name = Name, address = Address, port = Port}) ->
+    ?LOG_NOTICE(#{event => doing_status_check, name => Name, address => Address, port => Port}),
+    case mc_server:ping(Address, Port) of
+        {ok, Info} ->
+            mc_server_registry:update(Info#{name => Name});
+        {error, Reason} ->
+            % Try again in BACKOFF_TIME from supervisor restarting us
+            exit({server_not_responding, {error, Reason}})
+    end.

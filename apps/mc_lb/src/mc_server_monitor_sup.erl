@@ -1,23 +1,35 @@
 -module(mc_server_monitor_sup).
 -behaviour(supervisor).
 
--export([start_link/1]).
+-include_lib("kernel/include/logger.hrl").
+
+-export([start_link/0, start_monitor/3]).
 -export([init/1]).
 
-start_link(Servers) ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, [Servers]).
+start_link() ->
+    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
-init([Servers]) ->
+init([]) ->
     SupFlags = #{
         strategy => simple_one_for_one,
-        intensity => 0,
-        period => 1
+        intensity => 1,
+        % When a monitor dies, it waits three seconds before restarting. This supervisor should never die.
+        period => 3
     },
+    % Children are started dynamically from mc_server_registry
     ChildSpecs = [
         #{
-            id => ServerName,
-            start => {mc_server_monitor, start_link, [S]}
+            id => mc_server_monitor,
+            start => {mc_server_monitor, start_link, []},
+            restart => permanent,
+            type => worker
         }
-     || S = #{name := ServerName} <- Servers
     ],
     {ok, {SupFlags, ChildSpecs}}.
+
+-spec start_monitor(Name, Address, Port) -> {ok, pid()} when
+    Name :: binary(),
+    Address :: inet:socket_address() | inet:hostname(),
+    Port :: inet:port_number().
+start_monitor(Name, Address, Port) ->
+    supervisor:start_child(?MODULE, [Name, Address, Port]).

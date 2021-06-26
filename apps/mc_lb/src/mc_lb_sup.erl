@@ -28,8 +28,8 @@ start_link() ->
 init([]) ->
     SupFlags = #{
         strategy => one_for_one,
-        intensity => 0,
-        period => 1
+        intensity => 1,
+        period => 5
     },
     ChildSpecs = [
         #{
@@ -38,6 +38,13 @@ init([]) ->
             restart => permanent,
             type => supervisor,
             modules => [mc_player_sup]
+        },
+        #{
+            id => mc_servers_sup,
+            start => {mc_servers_sup, start_link, []},
+            restart => permanent,
+            type => supervisor,
+            modules => [mc_servers_sup]
         }
     ],
     {ok, {SupFlags, ChildSpecs}}.
