@@ -68,14 +68,12 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 % Handle if any sockets close unexpectedly
-handle_info({switch_server, ServerName}, #state{cpipe = CPipe, spipe = SPipe, ssock = S} = State) ->
+handle_info({switch_server, ServerName}, State) ->
     case mc_server_registry:find_server(ServerName) of
         {ok, {Address, Port}} ->
-            {ok, SSocket} = mc_server:connect(Address, Port, #{name => <<"ttt">>}),
-            ok = mc_pipe:bind(CPipe, recv, SSocket),
-            ok = mc_pipe:bind(SPipe, send, SSocket),
-            close_socket(S),
-            {noreply, State#state{ssock = SSocket}};
+            NewState = connect_new_server(State, Address, Port),
+            disconnect_old_server(State),
+            {noreply, NewState};
         server_not_found ->
             do_send_msg(State, ["World with name '", ServerName, "' does not exist"]),
             {noreply, State}
@@ -92,7 +90,13 @@ do_send_msg(#state{csock = C}, Msg) ->
         sender => <<0:128>>
     }).
 
-close_socket(none) ->
+connect_new_server(#state{cpipe = CPipe, spipe = SPipe} = State, Address, Port) ->
+    {ok, NewSSocket} = mc_server:connect(Address, Port, #{name => <<"ttt">>}),
+    ok = mc_pipe:bind(CPipe, recv, NewSSocket),
+    ok = mc_pipe:bind(SPipe, send, NewSSocket),
+    State#state{ssock = NewSSocket}.
+
+disconnect_old_server(#state{ssock = none}) ->
     ok;
-close_socket(Socket) ->
+disconnect_old_server(#state{ssock = Socket}) ->
     mc_socket:shutdown(Socket).
