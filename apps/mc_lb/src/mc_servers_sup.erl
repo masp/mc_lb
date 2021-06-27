@@ -28,6 +28,6 @@ init(_Args) ->
 
 servers() ->
     [
-        #{name => <<"Server A">>, address => "localhost", port => 25564}
-        % #{name => <<"Server B">>, address => "localhost", port => 25563}
+        #{name => <<"A">>, address => "localhost", port => 25564},
+        #{name => <<"B">>, address => "localhost", port => 25563}
     ].

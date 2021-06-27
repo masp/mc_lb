@@ -3,7 +3,7 @@
 
 -include_lib("kernel/include/logger.hrl").
 
--export([start_link/1, update/1]).
+-export([start_link/1, update/1, find_server/1, list_servers/0]).
 
 %% gen_server callbacks
 -export([
@@ -49,14 +49,25 @@ start_link(ServerList) ->
 update(Info) ->
     gen_server:cast(?MODULE, {status_update, Info}).
 
+-spec find_server(Name) -> {ok, {Address, Port}} | server_not_found when
+    Name :: binary(),
+    Address :: inet:socket_address() | inet:hostname(),
+    Port :: inet:port_number().
+find_server(Name) ->
+    gen_server:call(?MODULE, {find_server, Name}).
+
+-spec list_servers() -> [ServerName] when ServerName :: binary().
+list_servers() ->
+    [S#server_info.name || S <- ets:tab2list(mc_servers)].
+
 init([ServerList]) ->
     % ETS table where key is `name` in `server_info`
-    Tab = ets:new(servers, [set, {keypos, 2}]),
+    Tab = ets:new(mc_servers, [set, {keypos, 2}, named_table]),
     [start_server(S, Tab) || S <- ServerList],
     {ok, #state{servers = Tab}}.
 
-handle_call(_Msg, _From, State) ->
-    {noreply, State}.
+handle_call({find_server, Name}, _From, #state{servers = Tab} = State) ->
+    {reply, do_find_server(Tab, Name), State}.
 
 handle_cast(
     {status_update, #{
@@ -97,3 +108,11 @@ start_server(#{name := Name, address := Address, port := Port}, Tab) ->
         port = Port
     }),
     mc_server_monitor_sup:start_monitor(Name, Address, Port).
+
+do_find_server(Tab, default) ->
+    do_find_server(Tab, ets:first(Tab));
+do_find_server(Tab, Name) ->
+    case ets:lookup(Tab, Name) of
+        [] -> server_not_found;
+        [#server_info{address = Address, port = Port}] -> {ok, {Address, Port}}
+    end.

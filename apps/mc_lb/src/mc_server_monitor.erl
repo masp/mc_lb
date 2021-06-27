@@ -55,7 +55,7 @@ terminate(_Reason, _State, _Data) ->
 
 %% Internal functions
 do_status_check(#data{name = Name, address = Address, port = Port}) ->
-    ?LOG_NOTICE(#{event => doing_status_check, name => Name, address => Address, port => Port}),
+    ?LOG_DEBUG(#{event => doing_status_check, name => Name, address => Address, port => Port}),
     case mc_server:ping(Address, Port) of
         {ok, Info} ->
             mc_server_registry:update(Info#{name => Name});
