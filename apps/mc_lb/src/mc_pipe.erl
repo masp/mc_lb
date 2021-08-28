@@ -44,7 +44,7 @@ init([Player, Filters]) ->
     }}.
 
 handle_call({bind, recv, Socket}, _From, State) ->
-    mc_socket:set_active(Socket),
+    ok = mc_socket:recv_passive(Socket),
     {reply, ok, State#state{recv = Socket}};
 handle_call({bind, send, Socket}, _From, State) ->
     {reply, ok, State#state{send = Socket}}.
@@ -53,7 +53,7 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 handle_info(
-    {packet, R, {Name, Packet}},
+    {R, {packet, Name, Packet}},
     #state{recv = R, send = S, filters = Fs, player = Player} = State
 ) when S =/= none ->
     case run_filters(Player, Name, Packet, Fs) of
@@ -62,14 +62,16 @@ handle_info(
         block ->
             block
     end,
-    mc_socket:set_active(R),
+    ok = mc_socket:recv_passive(R),
     {noreply, State};
 handle_info(
-    {unknown_packet, R, {ID, PacketBin}},
+    {R, {unknown_packet, ID, PacketBin}},
     #state{recv = R, send = S} = State
 ) when S =/= none ->
     ok = mc_socket:send_raw(S, ID, PacketBin),
-    mc_socket:set_active(R),
+    ok = mc_socket:recv_passive(R),
+    {noreply, State};
+handle_info(_Msg, State) ->
     {noreply, State}.
 
 terminate(_Reason, _State) ->

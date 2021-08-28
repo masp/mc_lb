@@ -20,7 +20,7 @@
 
 % Every 5 seconds heartbeat server to verify they are still alive by sending a status request. We can also then see how many players are online and how
 % full the server is.
--define(PING_FREQ, 5000).
+-define(PING_FREQ, 60000).
 
 -record(data, {
     name :: binary(),
@@ -55,11 +55,27 @@ terminate(_Reason, _State, _Data) ->
 
 %% Internal functions
 do_status_check(#data{name = Name, address = Address, port = Port}) ->
-    ?LOG_DEBUG(#{event => doing_status_check, name => Name, address => Address, port => Port}),
-    case mc_server:ping(Address, Port) of
+    Result =
+        try
+            mc_server:ping(Address, Port)
+        catch
+            _:PingError -> {error, PingError}
+        end,
+    case Result of
         {ok, Info} ->
-            mc_server_registry:update(Info#{name => Name});
+            ?LOG_DEBUG(#{
+                event => status_check_success,
+                server => Name,
+                address => Address,
+                reason => Info
+            }),
+            mc_server_registry:update(Info#{name => Name, status => online});
         {error, Reason} ->
-            % Try again in BACKOFF_TIME from supervisor restarting us
-            exit({server_not_responding, {error, Reason}})
+            ?LOG_DEBUG(#{
+                event => status_check_fail,
+                server => Name,
+                address => Address,
+                reason => Reason
+            }),
+            mc_server_registry:update(#{name => Name, status => offline})
     end.

@@ -21,10 +21,10 @@
     Player :: player().
 connect(Address, Port, Player) ->
     Protocol = mc_protocol:init(),
-    {ok, Socket} = connect_base(Address, Port, Protocol),
-    LoginSocket = handshake(Socket, Protocol, login),
-    PlaySocket = login(LoginSocket, Player),
-    {ok, PlaySocket}.
+    {ok, Socket} = mc_socket:connect(Address, Port, serverbound, Protocol),
+    handshake(Socket, Protocol, login),
+    login(Socket, Player),
+    {ok, Socket}.
 
 -spec ping(Address, Port) -> {ok, Status} | {error, term()} when
     Address :: inet:socket_address() | inet:hostname(),
@@ -36,20 +36,12 @@ connect(Address, Port, Player) ->
     }.
 ping(Address, Port) ->
     Protocol = mc_protocol:init(),
-    case connect_base(Address, Port, Protocol) of
+    case mc_socket:connect(Address, Port, serverbound, Protocol) of
         {ok, Socket} ->
-            StatusSocket = handshake(Socket, Protocol, status),
-            Ret = do_ping(StatusSocket),
-            mc_socket:shutdown(StatusSocket),
+            handshake(Socket, Protocol, status),
+            Ret = do_ping(Socket),
+            mc_socket:shutdown(Socket),
             Ret;
-        {error, Reason} ->
-            {error, Reason}
-    end.
-
-connect_base(Address, Port, Protocol) ->
-    case gen_tcp:connect(Address, Port, [binary, {active, false}]) of
-        {ok, TcpSocket} ->
-            {ok, mc_socket:wrap(TcpSocket, serverbound, Protocol)};
         {error, Reason} ->
             {error, Reason}
     end.
@@ -72,8 +64,15 @@ login(Socket, #{name := Name} = Player) ->
     case mc_socket:recv(Socket) of
         {packet, login_success, _Packet} ->
             mc_socket:change_state(Socket, play);
-        {packet, _PacketName, _Packet} ->
-            % TODO: handle compression and encryption
+        {packet, disconnect, #{reason := Reason}} ->
+            exit({fail_server_connect, Reason});
+        {packet, encryption_request, _Packet} ->
+            exit(
+                {fail_server_connect,
+                    mc_chat:warn("Encyrption enabled on server behind proxy, needs to be disabled")}
+            );
+        {packet, _Id, _Packet} ->
+            % TODO: handle compression, ignore for now
             login(Socket, Player)
     end.
 

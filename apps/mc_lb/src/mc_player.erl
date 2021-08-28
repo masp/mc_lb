@@ -3,7 +3,7 @@
 
 -include_lib("kernel/include/logger.hrl").
 
--export([start_link/1, send_msg/2, switch_server/2]).
+-export([start_link/1, send_msg/2, switch_server/2, disconnect/2]).
 
 %% gen_server callbacks
 -export([
@@ -32,6 +32,7 @@ start_link(CSocket) ->
     gen_server:start_link(?MODULE, [CSocket], []).
 
 init([CSocket]) ->
+    link(CSocket),
     {ok, CPipe} = mc_pipe:start_link(self(), []),
     {ok, SPipe} = mc_pipe:start_link(self(), [
         mc_command_filter
@@ -56,13 +57,21 @@ send_msg(Player, Msg) ->
 switch_server(Player, NewServer) ->
     gen_server:call(Player, {switch_server, NewServer}).
 
+-spec disconnect(pid(), Reason) -> ok when
+    Reason :: binary().
+disconnect(Player, Reason) ->
+    gen_server:call(Player, {disconnect, Reason}).
+
 handle_call({send_msg, Msg}, _From, State) ->
     do_send_msg(State, Msg),
     {reply, ok, State};
 handle_call({switch_server, Name}, _From, State) ->
     % So that the switch happens asynchronously from the gen_server call
     self() ! {switch_server, Name},
-    {reply, ok, State}.
+    {reply, ok, State};
+handle_call({disconnect, Reason}, _From, #state{csock = CSock}) ->
+    mc_socket:send(CSock, disconnect, #{reason => Reason}),
+    exit(normal).
 
 handle_cast(_Msg, State) ->
     {noreply, State}.
@@ -79,8 +88,15 @@ handle_info({switch_server, ServerName}, State) ->
             {noreply, State}
     end.
 
-terminate(_Reason, _State) ->
-    ok.
+terminate(_Reason, #state{csock = CSock, ssock = SSock}) ->
+    mc_socket:shutdown(CSock),
+    case SSock of
+        none ->
+            ok;
+        _ ->
+            mc_socket:shutdown(SSock),
+            ok
+    end.
 
 % Internal functions
 do_send_msg(#state{csock = C}, Msg) ->

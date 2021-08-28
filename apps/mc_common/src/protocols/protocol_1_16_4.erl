@@ -13,37 +13,27 @@ lookup_packet_info(PacketInfo) ->
 
         ?PACKET(16#00, status, serverbound, status_req);
         ?PACKET(16#01, status, serverbound, ping);
+
         ?PACKET(16#00, status, clientbound, status_resp);
         ?PACKET(16#01, status, clientbound, pong);
 
         ?PACKET(16#00, login, serverbound, login_start);
+        ?PACKET(16#01, login, serverbound, encryption_response);
+    
+        ?PACKET(16#00, login, clientbound, disconnect);
+        ?PACKET(16#01, login, clientbound, encryption_request);
         ?PACKET(16#02, login, clientbound, login_success);
 
-        ?PACKET(16#00, play, serverbound, teleport_confirm);
         ?PACKET(16#03, play, serverbound, chat_serverbound);
-        ?PACKET(16#05, play, serverbound, client_settings);
         ?PACKET(16#0B, play, serverbound, plugin_message);
         ?PACKET(16#10, play, serverbound, keep_alive);
-        ?PACKET(16#12, play, serverbound, pos);
-        ?PACKET(16#13, play, serverbound, pos_and_rot);
-        ?PACKET(16#14, play, serverbound, rot);
-        ?PACKET(16#15, play, serverbound, player_movement);
 
         ?PACKET(16#04, play, clientbound, spawn_player);
         ?PACKET(16#0E, play, clientbound, chat_clientbound);
         ?PACKET(16#1F, play, clientbound, keep_alive);
         ?PACKET(16#24, play, clientbound, join_game);
-        ?PACKET(16#27, play, clientbound, entity_position);
-        ?PACKET(16#28, play, clientbound, entity_pos_and_rot);
-        ?PACKET(16#29, play, clientbound, entity_rot);
-        ?PACKET(16#2A, play, clientbound, entity_movement);
         ?PACKET(16#32, play, clientbound, player_info);
-        ?PACKET(16#34, play, clientbound, pos_and_look);
-        ?PACKET(16#36, play, clientbound, remove_entities);
         ?PACKET(16#39, play, clientbound, respawn);
-        ?PACKET(16#3A, play, clientbound, entity_head_look);
-        ?PACKET(16#40, play, clientbound, update_view_pos);
-        ?PACKET(16#42, play, clientbound, spawn_position);
         _ -> {unknown_packet, PacketInfo}
     end.
 
@@ -73,12 +63,25 @@ packet(pong) ->
 %%% Login Packets
 packet(login_start) ->
     [{name, string}];
+packet(disconnect) ->
+    [{reason, string}];
+packet(encryption_request) ->
+    [
+        {server_id, string},
+        {public_key, {binary, varint}},
+        {verify_token, {binary, varint}}
+    ];
+packet(encryption_response) ->
+    [
+        {shared_secret, {binary, varint}},
+        {verify_token, {binary, varint}}
+    ];
 packet(login_success) ->
     [{uuid, uuid}, {name, string}];
+%%%
+%%% Play Packets
 packet(keep_alive) ->
     [{id, i64}];
-packet(teleport_confirm) ->
-    [{teleport_id, varint}];
 packet(chat_serverbound) ->
     [{message, string}];
 packet(client_settings) ->
