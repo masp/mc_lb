@@ -1,7 +1,21 @@
 -module(mc_pipe).
 -behaviour(gen_server).
 
--export([start_link/2, bind/3]).
+-export([start_link/0, start_link/1, bind/3]).
+
+% mc_pipe is a process that transfer Minecraft packets from one socket to another in one direction. It also can be told
+% to filter out select packets and send them to a listener process. Those packets can then be held back or sent
+% through the pipe again.
+%
+% To connect a Socket1 to Socket2, do:
+%
+% Pipe = mc_pipe:start_link(#{join_game => self()}).
+% mc_pipe:bind(Pipe, recv, Socket1).
+% mc_pipe:bind(Pipe, send, Socket2).
+%
+% mc_socket:send(Socket1, join_game, #{...}).
+% flush().
+%   Received {filtered_packet, <Pid>, join_game, #{...}).
 
 %% gen_server callbacks
 -export([
@@ -14,22 +28,25 @@
 ]).
 
 -type proxy_socket() :: none | mc_socket:socket().
+-type filters() :: #{mc_protocol:packet_name() => pid()}.
 
 -opaque pipe() :: pid().
 -export_type([pipe/0]).
 
 -record(state, {
-    player :: mc_player:player(),
     recv = none :: proxy_socket(),
     send = none :: proxy_socket(),
-    filters = [] :: [module()]
+    filters = #{} :: filters()
 }).
 
--spec start_link(Player, Filters) -> {ok, mc_pipe:pipe()} when
-    Player :: mc_player:player(),
-    Filters :: [module()].
-start_link(Player, Filters) ->
-    gen_server:start_link(?MODULE, [Player, Filters], []).
+-spec start_link() -> {ok, mc_pipe:pipe()}.
+start_link() ->
+    start_link(#{}).
+
+-spec start_link(Filters) -> {ok, mc_pipe:pipe()} when
+    Filters :: filters().
+start_link(Filters) ->
+    gen_server:start_link(?MODULE, [Filters], []).
 
 -spec bind(pipe(), Side, Socket) -> ok when
     Side :: recv | send,
@@ -37,11 +54,8 @@ start_link(Player, Filters) ->
 bind(Pipe, Side, Socket) ->
     gen_server:call(Pipe, {bind, Side, Socket}).
 
-init([Player, Filters]) ->
-    {ok, #state{
-        player = Player,
-        filters = Filters
-    }}.
+init([Filters]) ->
+    {ok, #state{filters = Filters}}.
 
 handle_call({bind, recv, Socket}, _From, State) ->
     ok = mc_socket:recv_passive(Socket),
@@ -54,13 +68,13 @@ handle_cast(_Msg, State) ->
 
 handle_info(
     {R, {packet, Name, Packet}},
-    #state{recv = R, send = S, filters = Fs, player = Player} = State
+    #state{recv = R, send = S, filters = Filters} = State
 ) when S =/= none ->
-    case run_filters(Player, Name, Packet, Fs) of
-        forward ->
+    case maps:get(Name, Filters, nobody) of
+        nobody ->
             ok = mc_socket:send(S, Name, Packet);
-        block ->
-            block
+        Listener ->
+            Listener ! {filtered_packet, self(), Name, Packet}
     end,
     ok = mc_socket:recv_passive(R),
     {noreply, State};
@@ -79,12 +93,3 @@ terminate(_Reason, _State) ->
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
-
-%% Internal functions
-run_filters(_Player, _Name, _Packet, []) ->
-    forward;
-run_filters(Player, Name, Packet, [F | Fs]) ->
-    case mc_pipe_filter:filter(F, Player, Name, Packet) of
-        forward -> run_filters(Player, Name, Packet, Fs);
-        block -> block
-    end.
