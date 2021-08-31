@@ -5,7 +5,7 @@
 
 -export([version/0, packet/1, lookup_packet_info/1]).
 
-version() -> 755.
+version() -> 756.
 
 lookup_packet_info(PacketInfo) ->
     case PacketInfo of
@@ -23,6 +23,7 @@ lookup_packet_info(PacketInfo) ->
         ?PACKET(16#00, login, clientbound, disconnect);
         ?PACKET(16#01, login, clientbound, encryption_request);
         ?PACKET(16#02, login, clientbound, login_success);
+        ?PACKET(16#03, login, clientbound, set_compression);
 
         ?PACKET(16#03, play, serverbound, chat_serverbound);
         ?PACKET(16#0A, play, serverbound, plugin_message);
@@ -30,6 +31,7 @@ lookup_packet_info(PacketInfo) ->
 
         ?PACKET(16#04, play, clientbound, spawn_player);
         ?PACKET(16#0F, play, clientbound, chat_clientbound);
+        ?PACKET(16#1A, play, clientbound, disconnect_play);
         ?PACKET(16#21, play, clientbound, keep_alive);
         ?PACKET(16#26, play, clientbound, join_game);
         ?PACKET(16#36, play, clientbound, player_info);

@@ -23,6 +23,7 @@ lookup_packet_info(PacketInfo) ->
         ?PACKET(16#00, login, clientbound, disconnect);
         ?PACKET(16#01, login, clientbound, encryption_request);
         ?PACKET(16#02, login, clientbound, login_success);
+        ?PACKET(16#03, login, clientbound, set_compression);
 
         ?PACKET(16#03, play, serverbound, chat_serverbound);
         ?PACKET(16#0B, play, serverbound, plugin_message);
@@ -78,6 +79,8 @@ packet(encryption_response) ->
     ];
 packet(login_success) ->
     [{uuid, uuid}, {name, string}];
+packet(set_compression) ->
+    [{threshold, varint}];
 %%%
 %%% Play Packets
 packet(keep_alive) ->
@@ -258,6 +261,8 @@ packet(chat_clientbound) ->
             ]}},
         {sender, uuid}
     ];
+packet(disconnect_play) ->
+    [{reason, string}];
 packet(entity_head_look) ->
     [
         {entity_id, varint},

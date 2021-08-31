@@ -61,7 +61,7 @@
 
 -spec init() -> protocol().
 init() ->
-    ProtocolMod = protocol_1_16_4,
+    ProtocolMod = protocol_1_17,
     init(ProtocolMod).
 
 -spec init(module()) -> protocol().

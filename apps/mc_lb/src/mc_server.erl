@@ -15,17 +15,6 @@
 
 -export_type([info/0]).
 
--spec connect(Address, Port, Player) -> {ok, mc_socket:socket()} when
-    Address :: inet:socket_address() | inet:hostname(),
-    Port :: inet:port_number(),
-    Player :: player().
-connect(Address, Port, Player) ->
-    Protocol = mc_protocol:init(),
-    {ok, Socket} = mc_socket:connect(Address, Port, serverbound, Protocol),
-    handshake(Socket, Protocol, login),
-    login(Socket, Player),
-    {ok, Socket}.
-
 -spec ping(Address, Port) -> {ok, Status} | {error, term()} when
     Address :: inet:socket_address() | inet:hostname(),
     Port :: inet:port_number(),
@@ -36,15 +25,22 @@ connect(Address, Port, Player) ->
     }.
 ping(Address, Port) ->
     Protocol = mc_protocol:init(),
-    case mc_socket:connect(Address, Port, serverbound, Protocol) of
-        {ok, Socket} ->
-            handshake(Socket, Protocol, status),
-            Ret = do_ping(Socket),
-            mc_socket:shutdown(Socket),
-            Ret;
-        {error, Reason} ->
-            {error, Reason}
-    end.
+    {ok, Socket} = mc_socket:connect(Address, Port, serverbound, Protocol),
+    handshake(Socket, Protocol, status),
+    Ret = do_ping(Socket),
+    mc_socket:shutdown(Socket),
+    Ret.
+
+-spec connect(Address, Port, Player) -> {ok, mc_socket:socket()} when
+    Address :: inet:socket_address() | inet:hostname(),
+    Port :: inet:port_number(),
+    Player :: player().
+connect(Address, Port, Player) ->
+    Protocol = mc_protocol:init(),
+    {ok, Socket} = mc_socket:connect(Address, Port, serverbound, Protocol),
+    handshake(Socket, Protocol, login),
+    login(Socket, Player),
+    {ok, Socket}.
 
 handshake(Socket, Protocol, NextState) ->
     mc_socket:send(
@@ -71,7 +67,9 @@ login(Socket, #{name := Name} = Player) ->
                 {fail_server_connect,
                     mc_chat:warn("Encyrption enabled on server behind proxy, needs to be disabled")}
             );
-        {packet, _Id, _Packet} ->
+        {packet, set_compression, #{threshold := Threshold}} when Threshold >= 0 ->
+            exit({fail_server_connect, "Compression should not be enabled on server behind proxy"});
+        {packet, set_compression, #{threshold := -1}} ->
             % TODO: handle compression, ignore for now
             login(Socket, Player)
     end.

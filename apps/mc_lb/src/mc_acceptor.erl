@@ -48,8 +48,8 @@ handle_request(#request{socket = Sock} = Req, status, Data) ->
         {packet, status_req, _} ->
             JsonResp = jsone:encode(#{
                 version => #{
-                    name => <<"1.16.4">>,
-                    protocol => 754
+                    name => <<"1.17.1">>,
+                    protocol => 756
                 },
                 players => #{
                     max => 100,

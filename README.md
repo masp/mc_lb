@@ -7,10 +7,10 @@ Features
 --------
 
 - [X] Proxy a single Minecraft 1.16.4 server
-- [ ] Proxy many servers behind single proxy
+- [X] Proxy many servers behind single proxy
 - [ ] Proxy many servers behind many proxies
 - [ ] Global chat
-- [ ] Global teleportation
+- [X] Global teleportation
 
 Similar Projects
 ----------------

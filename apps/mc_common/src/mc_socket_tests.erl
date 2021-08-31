@@ -39,7 +39,7 @@ send_crypto(Socket) ->
         fun() ->
             Secret = <<0:128>>,
             mc_socket:set_encryption(Socket, Secret),
-            Dec = crypto:crypto_init(aes_cfb8, Secret, Secret, false),
+            Dec = crypto:crypto_init(aes_cfb8, Secret, Secret, [{encrypt, false}]),
             % Expect Login start packet binary received
             meck:expect(gen_tcp, send, fun(S, Body) ->
                 ?assertEqual(mock_socket, S),
@@ -71,7 +71,7 @@ recv(Socket) ->
 recv_encrypted(Socket) ->
     Secret = <<0:128>>,
     mc_socket:set_encryption(Socket, Secret),
-    Enc = crypto:crypto_init(aes_cfb8, Secret, Secret, true),
+    Enc = crypto:crypto_init(aes_cfb8, Secret, Secret, [{encrypt, true}]),
     meck:expect(inet, setopts, fun(_Socket, _Opts) ->
         Socket ! {tcp, mock_socket, crypto:crypto_update(Enc, <<5, 0, 3, "abc">>)},
         ok

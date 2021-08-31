@@ -65,7 +65,7 @@ list_servers() ->
 
 init([ServerList]) ->
     % ETS table where key is `name` in `server_info`
-    Tab = ets:new(mc_servers, [set, {keypos, 2}, named_table]),
+    Tab = ets:new(mc_servers, [ordered_set, {keypos, 2}, named_table]),
     [start_server(S, Tab) || S <- ServerList],
     {ok, #state{servers = Tab}}.
 
@@ -109,12 +109,13 @@ start_server(#{name := Name, address := Address, port := Port}, Tab) ->
     mc_server_monitor_sup:start_monitor(Name, Address, Port).
 
 do_find_server(Tab, default) ->
+    % The default server is always the first server
     do_find_server(Tab, ets:first(Tab));
 do_find_server(_Tab, '$end_of_table') ->
     server_not_found;
 do_find_server(Tab, Name) ->
     case ets:lookup(Tab, Name) of
         [] -> server_not_found;
-        [#server_info{status = offline}] -> do_find_server(Tab, ets:next(Tab, Name));
+        [#server_info{status = offline}] -> {server_offline, Name};
         [#server_info{address = Address, port = Port, status = online}] -> {ok, {Address, Port}}
     end.

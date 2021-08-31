@@ -155,8 +155,8 @@ handle_call({change_state, NewState}, _From, Socket) ->
 handle_call({set_encryption, none}, _From, Socket) ->
     {reply, ok, Socket#sock{encrypt = none, decrypt = none}};
 handle_call({set_encryption, SharedCode}, _From, Socket) ->
-    Encrypt = crypto:crypto_init(aes_cfb8, SharedCode, SharedCode, true),
-    Decrypt = crypto:crypto_init(aes_cfb8, SharedCode, SharedCode, false),
+    Encrypt = crypto:crypto_init(aes_cfb8, SharedCode, SharedCode, [{encrypt, true}]),
+    Decrypt = crypto:crypto_init(aes_cfb8, SharedCode, SharedCode, [{encrypt, false}]),
     {reply, ok, Socket#sock{encrypt = Encrypt, decrypt = Decrypt}};
 handle_call({send, Name, Packet}, _From, #sock{dir = Dir, protocol = Protocol} = Socket) ->
     {ID, PacketBin} = mc_protocol:encode({Name, Dir}, Packet, Protocol),
